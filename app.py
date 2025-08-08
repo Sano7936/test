@@ -154,7 +154,7 @@ if mode == "Quiz":
             if idx + 1 < total:
                 st.session_state.index += 1
                 # clear the next question input to avoid showing previous answer in new input
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.session_state.quiz_started = False
                 # show summary
@@ -209,7 +209,7 @@ elif mode == "Flashcards":
         st.experimental_rerun()
     if col2.button("Next"):
         st.session_state.fc_index = (st.session_state.fc_index + 1) % len(vocab_df)
-        st.experimental_rerun()
+        st.rerun()
 
 # -----------------------
 # Manage Vocabulary Mode
@@ -228,7 +228,7 @@ elif mode == "Manage Vocabulary":
                 new_row = {"turkish": t_new.strip(), "english": e_new.strip()}
                 st.session_state.vocab_df = pd.concat([st.session_state.vocab_df, pd.DataFrame([new_row])], ignore_index=True)
                 st.success("Added.")
-                st.experimental_rerun()
+                st.rerun()
 
     st.subheader("Current vocabulary")
     edited = st.experimental_data_editor(st.session_state.vocab_df, num_rows="dynamic")  # works in recent Streamlit
