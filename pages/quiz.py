@@ -71,7 +71,7 @@ if not st.session_state.quiz_started:
             st.session_state.directions_per_question = directions_per_question
             st.session_state.answers = [""] * num_questions
             st.session_state.quiz_started = True
-            st.experimental_rerun()
+            st.rerun()
 
 else:
     num_questions = len(st.session_state.questions)
