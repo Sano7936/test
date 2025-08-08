@@ -6,9 +6,6 @@ import difflib
 
 st.set_page_config(page_title="Vocabulary Quiz", layout="centered")
 
-# -----------------------
-# DB connection
-# -----------------------
 def get_connection():
     try:
         return psycopg2.connect(st.secrets["neon"])
@@ -16,9 +13,6 @@ def get_connection():
         st.error(f"Database connection failed: {e}")
         return None
 
-# -----------------------
-# Fuzzy match helper
-# -----------------------
 def is_correct(user_answer: str, correct_answer: str, threshold=0.8) -> bool:
     ua = user_answer.strip().lower()
     ca = correct_answer.strip().lower()
@@ -26,11 +20,6 @@ def is_correct(user_answer: str, correct_answer: str, threshold=0.8) -> bool:
         return True
     return difflib.SequenceMatcher(None, ua, ca).ratio() >= threshold
 
-st.title("📝 Vocabulary Quiz")
-
-# -----------------------
-# Load vocab from DB
-# -----------------------
 conn = get_connection()
 if conn:
     df = pd.read_sql("SELECT turkish, english FROM vocabularies", conn)
@@ -38,60 +27,100 @@ if conn:
 else:
     df = pd.DataFrame()
 
-# -----------------------
-# Check for enough data
-# -----------------------
+st.title("📝 Vocabulary Quiz")
+
 if df.empty:
     st.warning("No vocabulary found. Please upload some first.")
-elif len(df) < 2:
-    st.warning("Need at least 2 words in the database to start a quiz.")
+    st.stop()
+
+if len(df) < 5:
+    st.warning("Need at least 5 words in the database to start a quiz.")
+    st.stop()
+
+max_questions = min(100, len(df))
+
+if "quiz_started" not in st.session_state:
+    st.session_state.quiz_started = False
+
+if not st.session_state.quiz_started:
+    with st.form("quiz_setup"):
+        num_questions = st.slider(
+            "Number of questions",
+            min_value=5,
+            max_value=max_questions,
+            value=10
+        )
+        direction = st.selectbox(
+            "Direction",
+            ["Turkish → English", "English → Turkish", "Mixed"]
+        )
+        submitted = st.form_submit_button("Start Quiz")
+
+        if submitted:
+            st.session_state.questions = df.sample(num_questions).to_dict(orient="records")
+            st.session_state.direction = direction
+
+            # Determine direction per question and store it (important for Mixed)
+            directions_per_question = []
+            for _ in range(num_questions):
+                if direction == "Mixed":
+                    directions_per_question.append(random.choice(["t2e", "e2t"]))
+                else:
+                    directions_per_question.append("t2e" if direction == "Turkish → English" else "e2t")
+
+            st.session_state.directions_per_question = directions_per_question
+            st.session_state.answers = [""] * num_questions
+            st.session_state.quiz_started = True
+            st.experimental_rerun()
+
 else:
-    num_questions = st.slider(
-        "Number of questions",
-        min_value=1,
-        max_value=len(df),
-        value=min(10, len(df))
-    )
-    direction = st.selectbox(
-        "Direction",
-        ["Turkish → English", "English → Turkish", "Mixed"]
-    )
+    num_questions = len(st.session_state.questions)
+    st.write(f"Quiz started: {num_questions} questions | Direction: {st.session_state.direction}")
 
-    if st.button("Start Quiz"):
-        score = 0
-        results = []
-        questions = df.sample(num_questions).to_dict(orient="records")
-
-        for i, q in enumerate(questions, start=1):
-            if direction == "Mixed":
-                dir_choice = random.choice(["t2e", "e2t"])
-            else:
-                dir_choice = "t2e" if direction == "Turkish → English" else "e2t"
-
+    with st.form("quiz_questions"):
+        answers = []
+        for i, q in enumerate(st.session_state.questions, start=1):
+            dir_choice = st.session_state.directions_per_question[i-1]
             if dir_choice == "t2e":
                 question_word = q["turkish"]
-                answer_word = q["english"]
             else:
                 question_word = q["english"]
-                answer_word = q["turkish"]
 
-            user_answer = st.text_input(f"Q{i}: Translate '{question_word}'", key=f"q_{i}")
-            check_btn = st.button(f"Check Q{i}", key=f"check_{i}")
-            if check_btn:
-                if is_correct(user_answer, answer_word):
-                    st.success("✅ Correct!")
-                    score += 1
-                    results.append((question_word, user_answer, answer_word, True))
+            default_answer = st.session_state.answers[i-1] if i-1 < len(st.session_state.answers) else ""
+            user_input = st.text_input(f"Q{i}: Translate '{question_word}'", value=default_answer, key=f"q_{i}")
+            answers.append(user_input)
+
+        submitted = st.form_submit_button("Submit Answers")
+
+        if submitted:
+            st.session_state.answers = answers
+
+            score = 0
+            results = []
+            for i, q in enumerate(st.session_state.questions):
+                user_answer = answers[i]
+                dir_choice = st.session_state.directions_per_question[i]
+                if dir_choice == "t2e":
+                    correct_answer = q["english"]
+                    question_word = q["turkish"]
                 else:
-                    st.error(f"❌ Correct answer: {answer_word}")
-                    results.append((question_word, user_answer, answer_word, False))
+                    correct_answer = q["turkish"]
+                    question_word = q["english"]
 
-        st.markdown("---")
-        st.subheader("📊 Results")
-        st.write(f"Score: **{score} / {num_questions}**")
-        if results:
-            results_df = pd.DataFrame(
-                results,
-                columns=["Question", "Your Answer", "Correct Answer", "Correct?"]
-            )
+                correct = is_correct(user_answer, correct_answer)
+                if correct:
+                    score += 1
+                results.append({
+                    "Question": question_word,
+                    "Your Answer": user_answer,
+                    "Correct Answer": correct_answer,
+                    "Correct": "✅" if correct else "❌"
+                })
+
+            st.session_state.quiz_started = False
+
+            st.markdown("---")
+            st.subheader("📊 Quiz Results")
+            st.write(f"Your score: **{score} / {num_questions}**")
+            results_df = pd.DataFrame(results)
             st.dataframe(results_df)
