@@ -63,22 +63,40 @@ if option == "Manual entry":
 elif option == "Upload CSV":
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        if "turkish" in df.columns and "english" in df.columns:
-            conn = get_connection()
-            if conn:
-                cur = conn.cursor()
-                for _, row in df.iterrows():
-                    cur.execute(
-                        "INSERT INTO vocabularies (turkish, english) VALUES (%s, %s)",
-                        (str(row["turkish"]).strip(), str(row["english"]).strip())
-                    )
-                conn.commit()
-                cur.close()
-                conn.close()
-                st.success("✅ CSV uploaded successfully!")
-        else:
-            st.error("CSV must contain 'turkish' and 'english' columns.")
+        # Try to read with utf-8, if fail try latin1
+        try:
+            df = pd.read_csv(uploaded_file, encoding='utf-8')
+        except UnicodeDecodeError:
+            try:
+                uploaded_file.seek(0)  # reset pointer to start of file
+                df = pd.read_csv(uploaded_file, encoding='latin1')
+            except Exception as e:
+                st.error(f"Error reading CSV file: {e}")
+                df = None
+
+        if df is not None:
+            if "turkish" in df.columns.str.lower() and "english" in df.columns.str.lower():
+                # Fix column name case just in case
+                df.columns = [col.lower() for col in df.columns]
+
+                conn = get_connection()
+                if conn:
+                    cur = conn.cursor()
+                    for _, row in df.iterrows():
+                        # Defensive: convert to str and strip spaces
+                        turkish_word = str(row["turkish"]).strip()
+                        english_word = str(row["english"]).strip()
+                        if turkish_word and english_word:
+                            cur.execute(
+                                "INSERT INTO vocabularies (turkish, english) VALUES (%s, %s)",
+                                (turkish_word, english_word)
+                            )
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                    st.success("✅ CSV uploaded successfully!")
+            else:
+                st.error("CSV must contain 'turkish' and 'english' columns (case insensitive).")
 
 # -----------------------
 # Show current vocab
