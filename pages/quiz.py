@@ -38,11 +38,24 @@ if conn:
 else:
     df = pd.DataFrame()
 
+# -----------------------
+# Check for enough data
+# -----------------------
 if df.empty:
     st.warning("No vocabulary found. Please upload some first.")
+elif len(df) < 2:
+    st.warning("Need at least 2 words in the database to start a quiz.")
 else:
-    num_questions = st.slider("Number of questions", 1, len(df), min(10, len(df)))
-    direction = st.selectbox("Direction", ["Turkish → English", "English → Turkish", "Mixed"])
+    num_questions = st.slider(
+        "Number of questions",
+        min_value=1,
+        max_value=len(df),
+        value=min(10, len(df))
+    )
+    direction = st.selectbox(
+        "Direction",
+        ["Turkish → English", "English → Turkish", "Mixed"]
+    )
 
     if st.button("Start Quiz"):
         score = 0
@@ -77,5 +90,8 @@ else:
         st.subheader("📊 Results")
         st.write(f"Score: **{score} / {num_questions}**")
         if results:
-            results_df = pd.DataFrame(results, columns=["Question", "Your Answer", "Correct Answer", "Correct?"])
+            results_df = pd.DataFrame(
+                results,
+                columns=["Question", "Your Answer", "Correct Answer", "Correct?"]
+            )
             st.dataframe(results_df)
