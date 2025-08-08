@@ -117,7 +117,8 @@ if mode == "Quiz":
         st.write("Press **Start quiz** to begin. You can upload your CSV via the sidebar (columns: `turkish`, `english`).")
         if st.button("Start quiz"):
             start_quiz()
-            st.experimental_rerun()
+            st.
+        rerun()
     else:
         # running quiz
         idx = st.session_state.index
