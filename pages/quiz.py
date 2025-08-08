@@ -2,18 +2,41 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import random
+import difflib
 
 st.set_page_config(page_title="Vocabulary Quiz", layout="centered")
 
+# -----------------------
+# DB connection
+# -----------------------
 def get_connection():
-    return psycopg2.connect(st.secrets["neon"])
+    try:
+        return psycopg2.connect(st.secrets["neon"])
+    except Exception as e:
+        st.error(f"Database connection failed: {e}")
+        return None
+
+# -----------------------
+# Fuzzy match helper
+# -----------------------
+def is_correct(user_answer: str, correct_answer: str, threshold=0.8) -> bool:
+    ua = user_answer.strip().lower()
+    ca = correct_answer.strip().lower()
+    if ua == ca:
+        return True
+    return difflib.SequenceMatcher(None, ua, ca).ratio() >= threshold
 
 st.title("📝 Vocabulary Quiz")
 
-# Load data from Neon
+# -----------------------
+# Load vocab from DB
+# -----------------------
 conn = get_connection()
-df = pd.read_sql("SELECT turkish, english FROM vocabularies", conn)
-conn.close()
+if conn:
+    df = pd.read_sql("SELECT turkish, english FROM vocabularies", conn)
+    conn.close()
+else:
+    df = pd.DataFrame()
 
 if df.empty:
     st.warning("No vocabulary found. Please upload some first.")
@@ -23,8 +46,10 @@ else:
 
     if st.button("Start Quiz"):
         score = 0
+        results = []
         questions = df.sample(num_questions).to_dict(orient="records")
-        for q in questions:
+
+        for i, q in enumerate(questions, start=1):
             if direction == "Mixed":
                 dir_choice = random.choice(["t2e", "e2t"])
             else:
@@ -37,12 +62,20 @@ else:
                 question_word = q["english"]
                 answer_word = q["turkish"]
 
-            user_answer = st.text_input(f"Translate: {question_word}", key=question_word)
-            if st.button(f"Check {question_word}"):
-                if user_answer.strip().lower() == answer_word.strip().lower():
+            user_answer = st.text_input(f"Q{i}: Translate '{question_word}'", key=f"q_{i}")
+            check_btn = st.button(f"Check Q{i}", key=f"check_{i}")
+            if check_btn:
+                if is_correct(user_answer, answer_word):
                     st.success("✅ Correct!")
                     score += 1
+                    results.append((question_word, user_answer, answer_word, True))
                 else:
                     st.error(f"❌ Correct answer: {answer_word}")
+                    results.append((question_word, user_answer, answer_word, False))
 
-        st.write(f"Final score: {score} / {num_questions}")
+        st.markdown("---")
+        st.subheader("📊 Results")
+        st.write(f"Score: **{score} / {num_questions}**")
+        if results:
+            results_df = pd.DataFrame(results, columns=["Question", "Your Answer", "Correct Answer", "Correct?"])
+            st.dataframe(results_df)
