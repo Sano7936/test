@@ -1,12 +1,10 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
+from datetime import datetime
 
-st.set_page_config(page_title="Upload Vocabulary", layout="centered")
+st.set_page_config(page_title="Vocabulary Uploader", layout="centered")
 
-# -----------------------
-# DB connection
-# -----------------------
 def get_connection():
     try:
         return psycopg2.connect(st.secrets["neon"])
@@ -14,7 +12,6 @@ def get_connection():
         st.error(f"Database connection failed: {e}")
         return None
 
-# Create table if it doesn't exist
 def create_table():
     conn = get_connection()
     if conn is None:
@@ -34,11 +31,29 @@ def create_table():
 
 create_table()
 
+VALID_USERS = {
+    "admin": "1234",
+    "teacher": "abcd"
+}
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.title("🔑 Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if username in VALID_USERS and VALID_USERS[username] == password:
+            st.session_state.logged_in = True
+            st.success("✅ Login successful!")
+            st.experimental_rerun()
+        else:
+            st.error("❌ Invalid username or password.")
+    st.stop()  # Stop the app here until logged in
+
 st.title("📤 Upload Vocabulary")
 
-# -----------------------
-# Upload options
-# -----------------------
 option = st.radio("Choose input method", ["Manual entry", "Upload CSV"])
 
 if option == "Manual entry":
@@ -63,27 +78,24 @@ if option == "Manual entry":
 elif option == "Upload CSV":
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     if uploaded_file is not None:
-        # Try to read with utf-8, if fail try latin1
         try:
             df = pd.read_csv(uploaded_file, encoding='utf-8')
         except UnicodeDecodeError:
             try:
-                uploaded_file.seek(0)  # reset pointer to start of file
+                uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file, encoding='latin1')
             except Exception as e:
                 st.error(f"Error reading CSV file: {e}")
                 df = None
 
         if df is not None:
-            if "turkish" in df.columns.str.lower() and "english" in df.columns.str.lower():
-                # Fix column name case just in case
-                df.columns = [col.lower() for col in df.columns]
-
+            # Lowercase column names for matching
+            df.columns = [col.lower().strip() for col in df.columns]
+            if "turkish" in df.columns and "english" in df.columns:
                 conn = get_connection()
                 if conn:
                     cur = conn.cursor()
                     for _, row in df.iterrows():
-                        # Defensive: convert to str and strip spaces
                         turkish_word = str(row["turkish"]).strip()
                         english_word = str(row["english"]).strip()
                         if turkish_word and english_word:
@@ -96,11 +108,8 @@ elif option == "Upload CSV":
                     conn.close()
                     st.success("✅ CSV uploaded successfully!")
             else:
-                st.error("CSV must contain 'turkish' and 'english' columns (case insensitive).")
+                st.error("CSV must contain 'turkish' and 'english' columns.")
 
-# -----------------------
-# Show current vocab
-# -----------------------
 st.subheader("📜 Current Vocabulary in DB")
 conn = get_connection()
 if conn:
